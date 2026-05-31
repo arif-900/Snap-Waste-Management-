@@ -26,7 +26,8 @@ app = FastAPI(
     description="Backend services for reporting and monitoring public waste in Hyderabad, powered by Gemini AI and Supabase.",
     version="1.0.0",
     docs_url="/api/docs",
-    openapi_url="/api/openapi.json"
+    openapi_url="/api/openapi.json",
+    redirect_slashes=False
 )
 
 # CORS configurations
@@ -137,6 +138,7 @@ async def general_exception_handler(request, exc):
 # --- Endpoints ---
 
 @app.get("/api/v1/status")
+@app.get("/api/v1/status/")
 def get_status():
     """Server status check endpoint."""
     ai_status = "Unknown"
@@ -160,6 +162,12 @@ def get_status():
     status_code=status.HTTP_200_OK,
     summary="Analyze waste image without saving",
     description="Processes uploaded image, runs YOLO or Gemini classification, and checks for proximity duplicates without writing records to DB or Cloud Storage."
+)
+@app.post(
+    "/api/v1/complaints/analyze/",
+    response_model=ImageAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False
 )
 async def analyze_complaint_image(
     image: UploadFile = File(..., description="Waste image file to analyze"),
@@ -216,6 +224,12 @@ async def analyze_complaint_image(
     status_code=status.HTTP_201_CREATED,
     summary="Submit citizen report",
     description="Processes uploaded image, executes Gemini classification, uploads image, and stores the resulting complaint in the database."
+)
+@app.post(
+    "/api/v1/complaints/report/",
+    response_model=ComplaintResponse,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False
 )
 async def submit_complaint(
     image: UploadFile = File(..., description="Waste image file upload"),

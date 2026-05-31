@@ -254,8 +254,8 @@ const CitizenReport = () => {
     try {
       // Get all complaints, then filter by phone
       const data = await apiService.getComplaints({ phone: searchPhone });
-      // Since complaints API filters by phone number or provides all, let's safeguard filtering
-      const filtered = data.filter(c => c.reporterPhone && c.reporterPhone.replace(/\s+/g, '') === searchPhone.replace(/\s+/g, ''));
+      const complaintsData = Array.isArray(data) ? data : [];
+      const filtered = complaintsData.filter(c => c.reporterPhone && c.reporterPhone.replace(/\s+/g, '') === searchPhone.replace(/\s+/g, ''));
       setUserComplaints(filtered);
     } catch (err) {
       console.error('Error loading complaints: ', err);
