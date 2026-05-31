@@ -134,7 +134,7 @@ async def general_exception_handler(request, exc):
 
 # --- Endpoints ---
 
-@app.get("/")
+@app.get("/api/v1/status")
 def get_status():
     """Server status check endpoint."""
     ai_status = "Unknown"
