@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     YOLO_MODEL_PATH: str = "yolov8n.pt"
     
     # Supabase Settings
-    SUPABASE_URL: Optional[str] = None
-    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_URL: Optional[str] = "https://huxrjhtfmjqxdfsfchti.supabase.co"
+    SUPABASE_ANON_KEY: Optional[str] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh1eHJqaHRmbWpxeGRmc2ZjaHRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwODk0MzksImV4cCI6MjA5MTY2NTQzOX0.Z3hUgQIZGF2gl4odfH4h9BDtWgAQjbvgVsI66hTXUy4"
     SUPABASE_SERVICE_KEY: Optional[str] = None
 
     # Load from .env file if present
