@@ -5,20 +5,13 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
-  // Check if we are running in the browser and not on localhost
-  if (
-    typeof window !== 'undefined' &&
-    window.location.hostname !== 'localhost' &&
-    window.location.hostname !== '127.0.0.1' &&
-    window.location.hostname !== '[::1]'
-  ) {
-    return '/_/backend';
-  }
-  // If running locally, check if we are on the backend port (8000)
-  // If not, fallback to http://localhost:8000, otherwise use relative path
+  // If running locally on Vite dev server (e.g. port 5173), point to local FastAPI server
   if (typeof window !== 'undefined' && window.location.port !== '8000' && window.location.port !== '') {
-    return 'http://localhost:8000';
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '[::1]') {
+      return 'http://localhost:8000';
+    }
   }
+  // Otherwise, use relative path (works for both local unified server on 8000 and Vercel root-mounted server)
   return '';
 };
 
