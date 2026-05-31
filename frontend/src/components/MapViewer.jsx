@@ -68,7 +68,8 @@ const MapViewer = ({ complaints = [], selectedComplaint = null, onSelectComplain
 
     // Group complaints by rounded coordinates to detect exact/near overlaps
     const coordGroups = {};
-    complaints.forEach(complaint => {
+    const complaintsList = Array.isArray(complaints) ? complaints : [];
+    complaintsList.forEach(complaint => {
       const { location } = complaint;
       const { latitude, longitude } = location || {};
       if (latitude === undefined || longitude === undefined) return;

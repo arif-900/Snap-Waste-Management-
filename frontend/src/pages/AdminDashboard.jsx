@@ -84,12 +84,17 @@ const AdminDashboard = () => {
         apiService.getAnalyticsSummary()
       ]);
 
-      setComplaints(complaintsData);
-      setAnalytics(analyticsData);
+      const safeComplaints = Array.isArray(complaintsData) ? complaintsData : [];
+      const safeAnalytics = (analyticsData && typeof analyticsData === 'object' && !Array.isArray(analyticsData))
+        ? analyticsData
+        : { total: 0, pending: 0, in_progress: 0, resolved: 0, types: {}, severity: {} };
+
+      setComplaints(safeComplaints);
+      setAnalytics(safeAnalytics);
       
       // Keep selected complaint references updated if it still exists in the dataset
       if (selectedComplaint) {
-        const updatedSelected = complaintsData.find(c => c.id === selectedComplaint.id);
+        const updatedSelected = safeComplaints.find(c => c.id === selectedComplaint.id);
         if (updatedSelected) {
           setSelectedComplaint(updatedSelected);
         } else {
