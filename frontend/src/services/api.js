@@ -14,7 +14,12 @@ const getApiBaseUrl = () => {
   ) {
     return '/_/backend';
   }
-  return 'http://localhost:8000';
+  // If running locally, check if we are on the backend port (8000)
+  // If not, fallback to http://localhost:8000, otherwise use relative path
+  if (typeof window !== 'undefined' && window.location.port !== '8000' && window.location.port !== '') {
+    return 'http://localhost:8000';
+  }
+  return '';
 };
 
 const API_BASE_URL = getApiBaseUrl();

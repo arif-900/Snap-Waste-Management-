@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from typing import List, Optional, Dict, Any
 
 from app.config import settings
@@ -471,3 +471,30 @@ def get_analytics_summary():
 )
 def get_analytics_hotspots():
     return supabase_service.get_hotspots()
+
+# --- Serve Frontend build in Production / Single-Server Mode ---
+# Resolves path to frontend/dist
+frontend_dist_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
+frontend_assets_dir = os.path.join(frontend_dist_dir, "assets")
+
+# Mount assets directory if it exists
+if os.path.exists(frontend_assets_dir):
+    app.mount("/assets", StaticFiles(directory=frontend_assets_dir), name="assets")
+
+@app.get("/{catchall:path}")
+def serve_frontend(catchall: str):
+    # Try serving specific file from frontend/dist (e.g. favicon.ico, logo.png)
+    if catchall:
+        file_path = os.path.join(frontend_dist_dir, catchall)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+            
+    # Default fallback to index.html to support React Router client-side routing
+    index_file = os.path.join(frontend_dist_dir, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+        
+    return {
+        "message": "Welcome to the Smart Waste Management API.",
+        "frontend_status": "Vite production build not found. Run 'npm run build' in the frontend folder to serve the UI on this port."
+    }
