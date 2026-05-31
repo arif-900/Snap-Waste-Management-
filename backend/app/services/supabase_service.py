@@ -60,8 +60,19 @@ class SupabaseService:
             return self._save_locally(file_bytes, filename)
 
     def _save_locally(self, file_bytes: bytes, filename: str) -> str:
-        os.makedirs("static/uploads", exist_ok=True)
         safe_filename = f"{uuid.uuid4()}_{filename}"
+        
+        # On Vercel, save to /tmp since the filesystem is read-only
+        if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+            upload_dir = "/tmp/uploads"
+            os.makedirs(upload_dir, exist_ok=True)
+            filepath = os.path.join(upload_dir, safe_filename)
+            with open(filepath, "wb") as f:
+                f.write(file_bytes)
+            return f"/tmp/uploads/{safe_filename}"
+            
+        # Local development fallback
+        os.makedirs("static/uploads", exist_ok=True)
         filepath = os.path.join("static/uploads", safe_filename)
         with open(filepath, "wb") as f:
             f.write(file_bytes)

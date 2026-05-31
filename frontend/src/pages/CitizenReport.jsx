@@ -541,7 +541,7 @@ const CitizenReport = () => {
                     <input
                       type="tel"
                       inputMode="tel"
-                      pattern="\+?[0-9\s\-()]{7,20}"
+                      pattern="\+?[0-9\s()-]{7,20}"
                       maxLength={20}
                       required
                       value={phone}

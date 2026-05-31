@@ -37,8 +37,16 @@ app.add_middleware(
 )
 
 # Ensure folders exist for local upload testing
-os.makedirs("static/uploads", exist_ok=True)
+try:
+    os.makedirs("static/uploads", exist_ok=True)
+except Exception as e:
+    print(f"Could not create static/uploads directory: {e}")
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# On Vercel, mount /tmp for serving mock local uploads
+if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+    app.mount("/tmp", StaticFiles(directory="/tmp"), name="tmp_static")
 
 def resolve_hyderabad_address(lat: float, lng: float) -> str:
     """Helper to convert coordinates to high-fidelity Hyderabad locations for the demo."""
