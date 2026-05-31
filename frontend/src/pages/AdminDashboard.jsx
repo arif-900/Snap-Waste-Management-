@@ -173,6 +173,7 @@ const AdminDashboard = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="e.g. officer@ghmc.gov.in"
+                autoComplete="username"
                 className="w-full bg-slate-950 border border-slate-800 text-slate-200 px-3 py-2.5 rounded-lg text-xs focus:outline-none focus:border-brand-500"
               />
             </div>
@@ -185,6 +186,7 @@ const AdminDashboard = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
+                autoComplete="current-password"
                 className="w-full bg-slate-950 border border-slate-800 text-slate-200 px-3 py-2.5 rounded-lg text-xs focus:outline-none focus:border-brand-500"
               />
             </div>
