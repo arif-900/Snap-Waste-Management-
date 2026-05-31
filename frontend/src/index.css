@@ -1,0 +1,190 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #f0fdf4;
+  --color-brand-100: #dcfce7;
+  --color-brand-200: #bbf7d0;
+  --color-brand-300: #86efac;
+  --color-brand-400: #4ade80;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-brand-800: #065f46;
+  --color-brand-900: #064e3b;
+
+  --color-dark-50: #f8fafc;
+  --color-dark-100: #f1f5f9;
+  --color-dark-200: #e2e8f0;
+  --color-dark-300: #cbd5e1;
+  --color-dark-400: #94a3b8;
+  --color-dark-500: #64748b;
+  --color-dark-600: #475569;
+  --color-dark-700: #334155;
+  --color-dark-800: #1e293b;
+  --color-dark-900: #0f172a;
+  --color-dark-950: #030712;
+
+  --font-sans: 'Outfit', 'Inter', sans-serif;
+  
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.08);
+  --shadow-glass-active: 0 8px 32px 0 rgba(16, 185, 129, 0.15);
+}
+
+@utility glass-panel {
+  background: rgba(30, 41, 59, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+@utility glass-panel-light {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+@utility glass-card-hover {
+  transition: all 0.3s duration-300;
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-glass);
+    border-color: rgba(16, 185, 129, 0.2);
+  }
+}
+
+body {
+  @apply bg-dark-950 text-slate-100 font-sans h-full overflow-x-hidden;
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-dark-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-dark-700 rounded-full hover:bg-brand-600 transition-colors;
+}
+
+/* Leaflet Map Customizations */
+.leaflet-container {
+  font-family: 'Inter', sans-serif;
+  background-color: #0b0f19 !important;
+}
+
+.leaflet-bar {
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+}
+
+.leaflet-bar a {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  transition: all 0.2s;
+}
+
+.leaflet-bar a:hover {
+  background-color: #10b981 !important;
+  color: #ffffff !important;
+}
+
+.leaflet-popup-content-wrapper {
+  background: rgba(15, 23, 42, 0.9) !important;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #f1f5f9 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
+}
+
+.leaflet-popup-tip {
+  background: rgba(15, 23, 42, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Pulsing Custom Marker Pin */
+.pulse-marker {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  position: relative;
+}
+
+.pulse-marker::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  opacity: 0.8;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.35);
+    opacity: 1;
+  }
+  80%, 100% {
+    transform: scale(1.1);
+    opacity: 0;
+  }
+}
+
+.pulse-overflowing {
+  @apply bg-amber-500;
+}
+.pulse-overflowing::after {
+  @apply border border-amber-500 bg-amber-500/10;
+}
+
+.pulse-dumping {
+  @apply bg-red-600;
+}
+.pulse-dumping::after {
+  @apply border border-red-600 bg-red-600/10;
+}
+
+.pulse-plastic {
+  @apply bg-sky-400;
+}
+.pulse-plastic::after {
+  @apply border border-sky-400 bg-sky-400/10;
+}
+
+.pulse-construction {
+  @apply bg-stone-400;
+}
+.pulse-construction::after {
+  @apply border border-stone-400 bg-stone-400/10;
+}
+
+.pulse-ewaste {
+  @apply bg-fuchsia-500;
+}
+.pulse-ewaste::after {
+  @apply border border-fuchsia-500 bg-fuchsia-500/10;
+}
+
+.pulse-other {
+  @apply bg-emerald-500;
+}
+.pulse-other::after {
+  @apply border border-emerald-500 bg-emerald-500/10;
+}
+
+.pulse-high {
+  @apply bg-rose-500;
+}
+.pulse-high::after {
+  @apply border border-rose-500 bg-rose-500/10;
+}
+

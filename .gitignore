@@ -1,0 +1,28 @@
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+
+# Python / Backend
+backend/venv/
+backend/.env
+**/__pycache__/
+**/*.pyc
+backend/static/uploads/*
+!backend/static/uploads/.gitkeep
+
+# Environment files
+.env
+.env*.local
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
