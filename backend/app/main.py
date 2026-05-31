@@ -24,7 +24,9 @@ from app.services.image_hash import calculate_dhash, calculate_hamming_distance
 app = FastAPI(
     title="Smart Waste Management System API",
     description="Backend services for reporting and monitoring public waste in Hyderabad, powered by Gemini AI and Supabase.",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json"
 )
 
 # CORS configurations
