@@ -60,18 +60,25 @@ class SupabaseService:
             return self._save_locally(file_bytes, filename)
 
     def _save_locally(self, file_bytes: bytes, filename: str) -> str:
-        safe_filename = f"{uuid.uuid4()}_{filename}"
-        
-        # On Vercel, save to /tmp since the filesystem is read-only
+        # On Vercel, serverless containers are ephemeral and have no shared filesystem.
+        # Instead of saving to disk, we return a Base64 data URL so the image is stored
+        # directly in the database record and can be accessed reliably across all instances.
         if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
-            upload_dir = "/tmp/uploads"
-            os.makedirs(upload_dir, exist_ok=True)
-            filepath = os.path.join(upload_dir, safe_filename)
-            with open(filepath, "wb") as f:
-                f.write(file_bytes)
-            return f"/tmp/uploads/{safe_filename}"
+            import base64
+            ext = os.path.splitext(filename)[1].lower()
+            mime_type = "image/jpeg"
+            if ext in [".png"]:
+                mime_type = "image/png"
+            elif ext in [".webp"]:
+                mime_type = "image/webp"
+            elif ext in [".gif"]:
+                mime_type = "image/gif"
+                
+            encoded_image = base64.b64encode(file_bytes).decode("utf-8")
+            return f"data:{mime_type};base64,{encoded_image}"
             
         # Local development fallback
+        safe_filename = f"{uuid.uuid4()}_{filename}"
         os.makedirs("static/uploads", exist_ok=True)
         filepath = os.path.join("static/uploads", safe_filename)
         with open(filepath, "wb") as f:
