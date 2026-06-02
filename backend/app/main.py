@@ -2,7 +2,7 @@ import os
 import math
 import uuid
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Path, Query, status
+from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
@@ -25,8 +25,8 @@ app = FastAPI(
     title="Smart Waste Management System API",
     description="Backend services for reporting and monitoring public waste in Hyderabad, powered by Gemini AI and Supabase.",
     version="1.0.0",
-    docs_url="/api/docs",
-    openapi_url="/api/openapi.json",
+    docs_url="/docs",
+    openapi_url="/openapi.json",
     redirect_slashes=False
 )
 
@@ -39,21 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class APIPrefixMiddleware:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            path = scope.get("path", "")
-            if path.startswith("/v1") or path.startswith("/docs") or path.startswith("/openapi.json"):
-                new_path = "/api" + path
-                scope["path"] = new_path
-                if "raw_path" in scope:
-                    scope["raw_path"] = new_path.encode("ascii")
-        await self.app(scope, receive, send)
-
-app.add_middleware(APIPrefixMiddleware)
+api_router = APIRouter()
 
 
 # Ensure folders exist for local upload testing
@@ -154,8 +140,8 @@ async def general_exception_handler(request, exc):
 
 # --- Endpoints ---
 
-@app.get("/api/v1/status")
-@app.get("/api/v1/status/")
+@api_router.get("/status")
+@api_router.get("/status/")
 def get_status():
     """Server status check endpoint."""
     ai_status = "Unknown"
@@ -173,15 +159,15 @@ def get_status():
         "ai_status": ai_status
     }
 
-@app.post(
-    "/api/v1/complaints/analyze",
+@api_router.post(
+    "/complaints/analyze",
     response_model=ImageAnalysisResponse,
     status_code=status.HTTP_200_OK,
     summary="Analyze waste image without saving",
     description="Processes uploaded image, runs YOLO or Gemini classification, and checks for proximity duplicates without writing records to DB or Cloud Storage."
 )
-@app.post(
-    "/api/v1/complaints/analyze/",
+@api_router.post(
+    "/complaints/analyze/",
     response_model=ImageAnalysisResponse,
     status_code=status.HTTP_200_OK,
     include_in_schema=False
@@ -235,15 +221,15 @@ async def analyze_complaint_image(
             detail=f"An error occurred during AI image analysis: {str(e)}"
         )
 
-@app.post(
-    "/api/v1/complaints/report",
+@api_router.post(
+    "/complaints/report",
     response_model=ComplaintResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Submit citizen report",
     description="Processes uploaded image, executes Gemini classification, uploads image, and stores the resulting complaint in the database."
 )
-@app.post(
-    "/api/v1/complaints/report/",
+@api_router.post(
+    "/complaints/report/",
     response_model=ComplaintResponse,
     status_code=status.HTTP_201_CREATED,
     include_in_schema=False
@@ -333,8 +319,8 @@ async def submit_complaint(
             detail=f"An error occurred while creating the report: {str(e)}"
         )
 
-@app.get(
-    "/api/v1/complaints",
+@api_router.get(
+    "/complaints",
     response_model=List[ComplaintResponse],
     summary="Get all complaints",
     description="Retrieve all complaints with optional filtering by status or waste type category."
@@ -345,8 +331,8 @@ def get_all_complaints(
 ):
     return supabase_service.get_complaints(status=status, waste_type=waste_type)
 
-@app.get(
-    "/api/v1/complaints/{id}",
+@api_router.get(
+    "/complaints/{id}",
     response_model=ComplaintResponse,
     summary="Get complaint by ID",
     description="Retrieve full details for a single reported complaint."
@@ -362,8 +348,8 @@ def get_complaint_by_id(
         )
     return complaint
 
-@app.patch(
-    "/api/v1/complaints/{id}/status",
+@api_router.patch(
+    "/complaints/{id}/status",
     response_model=ComplaintResponse,
     summary="Update complaint status",
     description="Modifies the resolution status of a complaint. Accepted values: 'Pending', 'In Progress', 'Resolved'."
@@ -401,8 +387,8 @@ def update_complaint_status(
         )
     return updated_complaint
 
-@app.post(
-    "/api/v1/complaints/{id}/upvote",
+@api_router.post(
+    "/complaints/{id}/upvote",
     response_model=ComplaintResponse,
     summary="Upvote an active complaint",
     description="Increments the report count and adds the reporter's phone to the list. Escalates severity based on report counts."
@@ -467,8 +453,8 @@ def upvote_complaint(
         )
     return updated
 
-@app.delete(
-    "/api/v1/complaints/{id}",
+@api_router.delete(
+    "/complaints/{id}",
     status_code=status.HTTP_200_OK,
     summary="Delete complaint",
     description="Permanently removes a complaint record from the database."
@@ -487,8 +473,8 @@ def delete_complaint(
         "message": f"Complaint with ID '{id}' has been deleted successfully."
     }
 
-@app.get(
-    "/api/v1/analytics/summary",
+@api_router.get(
+    "/analytics/summary",
     response_model=AnalyticsSummaryResponse,
     summary="Get analytics summary",
     description="Fetch aggregated statistics on total, pending, in-progress, resolved, and waste distribution."
@@ -496,14 +482,17 @@ def delete_complaint(
 def get_analytics_summary():
     return supabase_service.get_analytics_summary()
 
-@app.get(
-    "/api/v1/analytics/hotspots",
+@api_router.get(
+    "/analytics/hotspots",
     response_model=List[HotspotResponse],
     summary="Get hotspots coordinates",
     description="Group complaints by physical proximity (approx. 100 meters) to locate waste concentration areas."
 )
 def get_analytics_hotspots():
     return supabase_service.get_hotspots()
+
+app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix="/v1", include_in_schema=False)
 
 # --- Serve Frontend build in Production / Single-Server Mode ---
 # Resolves path to frontend/dist
