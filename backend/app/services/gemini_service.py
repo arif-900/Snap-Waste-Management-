@@ -5,9 +5,10 @@ from PIL import Image
 from typing import Dict, Any, Optional
 from app.config import settings
 
-# Attempt import of Google Generative AI SDK
+# Attempt import of Google Gen AI SDK
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
@@ -15,13 +16,14 @@ except ImportError:
 class GeminiService:
     def __init__(self):
         self.is_configured = False
+        self.client = None
         if not GEMINI_AVAILABLE:
-            print("WARNING: google-generativeai package not found. Running Gemini in MOCK mode.")
+            print("WARNING: google-genai package not found. Running Gemini in MOCK mode.")
             return
             
         if settings.GEMINI_API_KEY:
             try:
-                genai.configure(api_key=settings.GEMINI_API_KEY)
+                self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
                 self.is_configured = True
                 print("Gemini API Client configured successfully.")
             except Exception as e:
@@ -43,9 +45,6 @@ class GeminiService:
             # Read image bytes using Pillow
             image = Image.open(io.BytesIO(image_bytes))
             
-            # Use gemini-1.5-flash for rapid, cost-effective vision analysis in hackathons
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
             prompt = """
             You are a Smart Waste Management Classifier for Hyderabad Municipality.
             Analyze the provided image and extract classification information.
@@ -60,10 +59,13 @@ class GeminiService:
             }
             """
             
-            # Request structured JSON format from the model
-            response = model.generate_content(
-                [prompt, image],
-                generation_config={"response_mime_type": "application/json"}
+            # Request structured JSON format from the model using the client
+            response = self.client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=[prompt, image],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
             )
             
             result_text = response.text.strip()
