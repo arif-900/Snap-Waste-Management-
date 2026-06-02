@@ -23,33 +23,35 @@ function App() {
             </div>
             <div>
               <span className="font-sans font-extrabold text-sm tracking-wide text-white uppercase block leading-none">SmartWaste</span>
-              <span className="font-sans font-bold text-[10px] text-brand-400 tracking-widest uppercase block mt-0.5">Hyderabad</span>
+              <span className="font-sans font-bold text-[10px] text-brand-400 tracking-widest uppercase hidden sm:block mt-0.5">Hyderabad</span>
             </div>
           </div>
 
           {/* Toggle Switches */}
-          <nav className="flex items-center gap-2">
+          <nav className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => setView('citizen')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 view === 'citizen'
                   ? 'bg-brand-500 text-white shadow-md shadow-brand-500/10'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
               }`}
             >
               <Smartphone className="w-3.5 h-3.5" />
-              Citizen Portal
+              <span className="hidden sm:inline">Citizen Portal</span>
+              <span className="inline sm:hidden">Citizen</span>
             </button>
             <button
               onClick={() => setView('admin')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 view === 'admin'
                   ? 'bg-brand-500 text-white shadow-md shadow-brand-500/10'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
               }`}
             >
               <Shield className="w-3.5 h-3.5" />
-              Admin Command
+              <span className="hidden sm:inline">Admin Command</span>
+              <span className="inline sm:hidden">Admin</span>
             </button>
           </nav>
         </div>

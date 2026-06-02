@@ -611,12 +611,15 @@ const CitizenReport = () => {
             <div className="relative flex-1">
               <Phone className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
               <input
-                type="number"
+                type="tel"
+                inputMode="tel"
+                pattern="\+?[0-9\s()-]{7,20}"
+                maxLength={20}
                 required
                 value={searchPhone}
-                onChange={(e) => setSearchPhone(e.target.value)}
+                onChange={(e) => setSearchPhone(e.target.value.replace(/[^0-9+\s()-]/g, ''))}
                 className="w-full bg-slate-950 border border-slate-800 text-slate-200 pl-10 pr-4 py-2.5 rounded-lg text-xs focus:outline-none focus:border-brand-500"
-                placeholder="e.g. +919876543210"
+                placeholder="e.g. +91 9876543210"
               />
             </div>
             <button

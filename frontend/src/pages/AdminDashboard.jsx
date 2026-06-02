@@ -26,6 +26,7 @@ const AdminDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [activeAdminTab, setActiveAdminTab] = useState('map'); // 'map' or 'list' on mobile
 
   // Monitor Auth Session
   useEffect(() => {
@@ -153,7 +154,7 @@ const AdminDashboard = () => {
   if (!session) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md bg-slate-900/60 border border-slate-800 p-8 rounded-2xl backdrop-blur-md shadow-2xl">
+        <div className="w-full max-w-md bg-slate-900/60 border border-slate-800 p-6 sm:p-8 rounded-2xl backdrop-blur-md shadow-2xl">
           <div className="text-center mb-8">
             <div className="w-12 h-12 bg-brand-500/10 text-brand-400 border border-brand-500/20 rounded-xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-brand-500/5">
               <Shield className="w-6 h-6" />
@@ -288,31 +289,67 @@ const AdminDashboard = () => {
         </div>
       </div>
 
+      {/* Mobile view selector */}
+      <div className="lg:hidden flex border border-slate-800 bg-slate-950/80 p-1 rounded-xl mb-4 max-w-sm mx-auto w-full">
+        <button
+          onClick={() => setActiveAdminTab('map')}
+          className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-center cursor-pointer ${
+            activeAdminTab === 'map'
+              ? 'bg-brand-500 text-white shadow-md shadow-brand-500/10'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Map View
+        </button>
+        <button
+          onClick={() => setActiveAdminTab('list')}
+          className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all text-center cursor-pointer ${
+            activeAdminTab === 'list'
+              ? 'bg-brand-500 text-white shadow-md shadow-brand-500/10'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          {selectedComplaint ? 'Incident Detail' : 'Incidents List'}
+        </button>
+      </div>
+
       {/* Dual Pane Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         
         {/* Map Panel */}
-        <div className="lg:col-span-7 h-[500px] lg:h-[620px] flex flex-col">
+        <div className={`lg:col-span-7 h-[500px] lg:h-[620px] flex flex-col ${activeAdminTab === 'map' ? 'flex' : 'hidden lg:flex'}`}>
           <MapViewer
             complaints={complaints}
             selectedComplaint={selectedComplaint}
-            onSelectComplaint={(complaint) => setSelectedComplaint(complaint)}
+            onSelectComplaint={(complaint) => {
+              setSelectedComplaint(complaint);
+              setActiveAdminTab('list');
+            }}
           />
         </div>
 
         {/* Complaints Directory / Details Section */}
-        <div className="lg:col-span-5 flex flex-col h-[500px] lg:h-[620px] self-stretch gap-4">
+        <div className={`lg:col-span-5 flex flex-col h-[500px] lg:h-[620px] self-stretch gap-4 ${activeAdminTab === 'list' ? 'flex' : 'hidden lg:flex'}`}>
           {selectedComplaint ? (
             /* Detailed view of selected complaint */
             <div className="flex-1 bg-slate-900/40 border border-slate-800 rounded-2xl p-5 backdrop-blur-md shadow-2xl flex flex-col overflow-y-auto">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
                 <span className="text-[10px] uppercase font-bold text-slate-400">Incident Details</span>
-                <button
-                  onClick={() => setSelectedComplaint(null)}
-                  className="text-xs text-slate-400 hover:text-white cursor-pointer"
-                >
-                  Close Detail
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setActiveAdminTab('map')}
+                    className="lg:hidden text-xs text-brand-400 hover:text-brand-300 font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <MapPin className="w-3 h-3" />
+                    View on Map
+                  </button>
+                  <button
+                    onClick={() => setSelectedComplaint(null)}
+                    className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    Close Detail
+                  </button>
+                </div>
               </div>
 
               {/* Snapshot image */}
