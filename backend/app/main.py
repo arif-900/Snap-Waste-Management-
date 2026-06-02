@@ -39,6 +39,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class APIPrefixMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path.startswith("/v1") or path.startswith("/docs") or path.startswith("/openapi.json"):
+                new_path = "/api" + path
+                scope["path"] = new_path
+                if "raw_path" in scope:
+                    scope["raw_path"] = new_path.encode("ascii")
+        await self.app(scope, receive, send)
+
+app.add_middleware(APIPrefixMiddleware)
+
+
 # Ensure folders exist for local upload testing
 try:
     os.makedirs("static/uploads", exist_ok=True)
