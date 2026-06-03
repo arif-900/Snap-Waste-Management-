@@ -1,39 +1,43 @@
 import os
-import math
 import uuid
+import json
+import asyncio
 from datetime import datetime
-from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Path, Query, status
+from fastapi import FastAPI, APIRouter, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse
 from typing import List, Optional, Dict, Any
 
 from app.config import settings
 from app.schemas.models import (
-    ComplaintResponse,
-    StatusUpdate,
-    AnalyticsSummaryResponse,
-    HotspotResponse,
-    ImageAnalysisResponse
+    ComplianceAnalysisRequest,
+    BatchAnalysisRequest,
+    ComplianceReportResponse,
+    ProjectHistoryResponse,
+    TeamComparisonResponse,
+    ComparisonItem,
+    TrendPoint
 )
+from app.services.gitlab_service import gitlab_service
+from app.services.compliance_checker import compliance_checker
+from app.services.gemini_suggestions import gemini_suggestions
 from app.services.supabase_service import supabase_service
-from app.services.gemini_service import gemini_service
-from app.services.yolo_service import yolo_service
-from app.services.image_hash import calculate_dhash, calculate_hamming_distance
 
 app = FastAPI(
-    title="Smart Waste Management System API",
-    description="Backend services for reporting and monitoring public waste in Hyderabad, powered by Gemini AI and Supabase.",
+    title="GitLab Compliance Checker API",
+    description="Backend service for analyzing GitLab repositories and generating custom compliance audits using Gemini AI.",
     version="1.0.0",
     docs_url="/docs",
     openapi_url="/openapi.json",
     redirect_slashes=False
 )
 
-# CORS configurations
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Set to specific origins in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,482 +45,314 @@ app.add_middleware(
 
 api_router = APIRouter()
 
-
-# Ensure folders exist for local upload testing
-try:
-    os.makedirs("static/uploads", exist_ok=True)
-except Exception as e:
-    print(f"Could not create static/uploads directory: {e}")
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# On Vercel, mount /tmp for serving mock local uploads
-if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
-    app.mount("/tmp", StaticFiles(directory="/tmp"), name="tmp_static")
-
-def resolve_hyderabad_address(lat: float, lng: float) -> str:
-    """Helper to convert coordinates to high-fidelity Hyderabad locations for the demo."""
-    # Hyderabad range: Latitude (~17.34 to 17.55), Longitude (~78.30 to 78.55)
-    if 17.42 <= lat <= 17.48 and 78.35 <= lng <= 78.40:
-        return "Madhapur Rd, Jubilee Hills, Hyderabad, Telangana 500033"
-    elif 17.40 <= lat <= 17.45 and 78.42 <= lng <= 78.47:
-        return "Banjara Hills Rd, Hyderabad, Telangana 500034"
-    elif 17.35 <= lat <= 17.38 and 78.45 <= lng <= 78.49:
-        return "Charminar Rd, Ghansi Bazaar, Hyderabad, Telangana 500002"
-    elif 17.40 <= lat <= 17.45 and 78.30 <= lng <= 78.35:
-        return "ISB Road, Financial District, Gachibowli, Hyderabad, Telangana 500032"
-    elif 17.48 <= lat <= 17.55 and 78.38 <= lng <= 78.45:
-        return "KHB Colony Road, Kukatpally, Hyderabad, Telangana 500072"
-    else:
-        # Fallback dynamic ward generation
-        ward_num = int(abs(lat * 100)) % 150 + 1
-        return f"GHMC Ward {ward_num}, Secunderabad Area, Hyderabad, Telangana"
-
-def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calculates Haversine distance in meters between two geocoordinates."""
-    R = 6371000  # Radius of Earth in meters
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    delta_phi = math.radians(lat2 - lat1)
-    delta_lambda = math.radians(lon2 - lon1)
-
-    a = math.sin(delta_phi / 2) ** 2 + \
-        math.cos(phi1) * math.cos(phi2) * \
-        math.sin(delta_lambda / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
-
-def check_duplicate_complaint(
-    lat1: float,
-    lon1: float,
-    waste_type: str,
-    image_hash: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
-    """
-    Checks if there's an existing active report of the same type within 50 meters,
-    OR if the same photo (via perceptual image hash similarity <= 10 Hamming distance)
-    is uploaded within 100 meters of an active report.
-    """
-    try:
-        complaints = supabase_service.get_complaints()
-        for c in complaints:
-            if c.get("status") in ["Pending", "In Progress"]:
-                loc = c.get("location", {})
-                lat2 = loc.get("latitude")
-                lon2 = loc.get("longitude")
-                if lat2 is not None and lon2 is not None:
-                    distance = calculate_distance(lat1, lon1, lat2, lon2)
-                    
-                    # 1. Image Similarity Check (dHash) within 100m
-                    existing_hash = c.get("imageHash")
-                    if image_hash and existing_hash and distance <= 100.0:
-                        hamming_dist = calculate_hamming_distance(image_hash, existing_hash)
-                        if hamming_dist <= 10:  # <= 10 bits difference means highly similar (>84% match)
-                            print(f"Perceptual duplicate detected via dHash! Hamming dist: {hamming_dist}")
-                            return c
-                    
-                    # 2. Standard Proximity + Classification Check within 50m
-                    if c.get("wasteType") == waste_type and distance <= 50.0:
-                        return c
-    except Exception as e:
-        print(f"Error checking duplicate complaints: {e}")
-    return None
-
-# --- Error Handlers ---
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"success": False, "detail": exc.detail}
-    )
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"success": False, "detail": f"Internal Server Error: {str(exc)}"}
-    )
-
-# --- Endpoints ---
-
 @api_router.get("/status")
-@api_router.get("/status/")
 def get_status():
-    """Server status check endpoint."""
-    ai_status = "Unknown"
-    if settings.AI_PROVIDER == "yolo":
-        ai_status = f"YOLOv8 Local Model ({settings.YOLO_MODEL_PATH})"
-    elif settings.AI_PROVIDER == "gemini":
-        ai_status = "Mock (Static classifier fallback)" if not gemini_service.is_configured else "Live (Gemini API Active)"
-        
+    """Verify server status and external dependency state."""
     return {
         "status": "online",
-        "service": "Smart Waste Monitoring System API",
-        "docs": "/docs",
-        "database": "Mock (In-Memory fallback)" if supabase_service.is_mock else "Live (Supabase PostgreSQL)",
-        "active_ai_provider": settings.AI_PROVIDER,
-        "ai_status": ai_status
+        "service": "GitLab Compliance Checker API",
+        "database": "Local JSON File Fallback" if supabase_service.is_mock else "Live Supabase PostgreSQL",
+        "ai_suggestions": "Mock Offline Fallback" if not settings.GEMINI_API_KEY else "Active Live Gemini API"
     }
 
-@api_router.post(
-    "/complaints/analyze",
-    response_model=ImageAnalysisResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Analyze waste image without saving",
-    description="Processes uploaded image, runs YOLO or Gemini classification, and checks for proximity duplicates without writing records to DB or Cloud Storage."
-)
-@api_router.post(
-    "/complaints/analyze/",
-    response_model=ImageAnalysisResponse,
-    status_code=status.HTTP_200_OK,
-    include_in_schema=False
-)
-async def analyze_complaint_image(
-    image: UploadFile = File(..., description="Waste image file to analyze"),
-    latitude: float = Form(..., description="GPS Latitude"),
-    longitude: float = Form(..., description="GPS Longitude")
+@api_router.get("/compliance/stream")
+def stream_compliance_analysis(
+    project_url: str = Query(..., description="GitLab repository URL or Project ID"),
+    branch: Optional[str] = Query(None, description="Repository branch name"),
+    pat: Optional[str] = Query(None, description="GitLab Personal Access Token")
 ):
-    # Validate file type
-    extension = os.path.splitext(image.filename)[1].lower()
-    if extension not in [".jpg", ".jpeg", ".png", ".webp"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported image type. Please upload a JPG, JPEG, PNG, or WEBP image."
-        )
+    """
+    Streams analysis log steps in real-time via Server-Sent Events (SSE).
+    At the final step, it returns the generated ComplianceReportResponse model inside the stream.
+    """
+    async def log_generator():
+        logs = []
+        
+        def add_log(msg: str):
+            timestamp = datetime.utcnow().strftime("%H:%M:%S")
+            logs.append({"timestamp": timestamp, "message": msg})
+            # Format as Server-Sent Event
+            return f"data: {json.dumps({'log': msg, 'timestamp': timestamp, 'percentage': len(logs) * 8})}\n\n"
 
-    try:
-        # Read file contents
-        image_bytes = await image.read()
-        
-        # Calculate image perceptual dHash
-        img_hash = calculate_dhash(image_bytes)
-        
-        # Analyze with active AI model
-        if settings.AI_PROVIDER == "yolo":
-            ai_analysis = yolo_service.analyze_waste_image(image_bytes)
-        else:
-            ai_analysis = gemini_service.analyze_waste_image(image_bytes)
+        try:
+            # Step 1: Parse input
+            yield add_log(f"Extracting GitLab identifier from: {project_url}")
+            project_path_or_id = gitlab_service.extract_project_path_or_id(project_url)
+            await asyncio.sleep(0.2)
             
-        # Check for duplication within 50m, or identical image within 100m
-        duplicate = check_duplicate_complaint(latitude, longitude, ai_analysis["waste_type"], img_hash)
-        is_duplicate = duplicate is not None
-        duplicate_id = duplicate["id"] if duplicate else None
+            # Step 2: Fetch project details
+            yield add_log(f"Connecting to GitLab API to fetch metadata for project '{project_path_or_id}'...")
+            try:
+                project_info = gitlab_service.get_project_details(project_path_or_id, pat)
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                return
+            await asyncio.sleep(0.2)
             
-        return {
-            "wasteType": ai_analysis["waste_type"],
-            "aiAnalysis": {
-                "severity": ai_analysis["severity"],
-                "confidence": ai_analysis["confidence"],
-                "description": ai_analysis["description"],
-                "is_waste": ai_analysis["is_waste"]
-            },
-            "is_duplicate": is_duplicate,
-            "duplicate_id": duplicate_id,
-            "show_bypass": ai_analysis.get("show_bypass", True)
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred during AI image analysis: {str(e)}"
-        )
+            # Step 3: Resolve branch
+            resolved_branch = branch or project_info.get("default_branch") or "main"
+            yield add_log(f"Resolving analysis branch. Selected: '{resolved_branch}'")
+            await asyncio.sleep(0.1)
 
-@api_router.post(
-    "/complaints/report",
-    response_model=ComplaintResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Submit citizen report",
-    description="Processes uploaded image, executes Gemini classification, uploads image, and stores the resulting complaint in the database."
-)
-@api_router.post(
-    "/complaints/report/",
-    response_model=ComplaintResponse,
-    status_code=status.HTTP_201_CREATED,
-    include_in_schema=False
-)
-async def submit_complaint(
-    image: UploadFile = File(..., description="Waste image file upload"),
-    latitude: float = Form(..., description="GPS Latitude"),
-    longitude: float = Form(..., description="GPS Longitude"),
-    phone: str = Form(..., description="Reporter mobile number"),
-    notes: Optional[str] = Form(None, description="Optional citizen notes")
-):
-    # Validate file type
-    extension = os.path.splitext(image.filename)[1].lower()
-    if extension not in [".jpg", ".jpeg", ".png", ".webp"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported image type. Please upload a JPG, JPEG, PNG, or WEBP image."
-        )
+            # Step 4: Fetch branches list
+            yield add_log("Retrieving repository branch list...")
+            branches = gitlab_service.get_project_branches(project_path_or_id, pat)
+            if branches and resolved_branch not in branches:
+                yield f"data: {json.dumps({'error': f'Branch {resolved_branch} not found in repository. Available: {branches}'})}\n\n"
+                return
+            await asyncio.sleep(0.1)
 
-    try:
-        # Read file contents
-        image_bytes = await image.read()
-        
-        # Compute image perceptual dHash
-        img_hash = calculate_dhash(image_bytes)
-        
-        # 1. Analyze with configured AI model (Gemini or YOLO)
-        if settings.AI_PROVIDER == "yolo":
-            ai_analysis = yolo_service.analyze_waste_image(image_bytes)
-        else:
-            ai_analysis = gemini_service.analyze_waste_image(image_bytes)
+            # Step 5: Fetch releases & tags
+            yield add_log("Querying repository releases and tags...")
+            releases = gitlab_service.get_project_releases(project_path_or_id, pat)
+            tags = gitlab_service.get_project_tags(project_path_or_id, pat)
+            await asyncio.sleep(0.1)
             
-        # 1b. Double-check duplicate safeguard in backend
-        duplicate = check_duplicate_complaint(latitude, longitude, ai_analysis["waste_type"], img_hash)
-        if duplicate:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Duplicate complaint detected. A similar active report (ID: {duplicate['id']}) exists in this area."
+            # Step 6: Fetch repository tree
+            yield add_log(f"Fetching recursive file tree for branch '{resolved_branch}' (this may take a few seconds)...")
+            try:
+                tree_files = gitlab_service.get_repository_tree(project_path_or_id, resolved_branch, pat)
+            except Exception as e:
+                yield f"data: {json.dumps({'error': f'Failed to retrieve repository tree: {str(e)}'})}\n\n"
+                return
+            yield add_log(f"Loaded {len(tree_files)} objects from repository.")
+            await asyncio.sleep(0.2)
+
+            # Step 7: Run checkers
+            yield add_log("Running compliance rules parser...")
+            
+            # Helper file content fetcher
+            def fetch_content(path: str) -> Optional[str]:
+                return gitlab_service.get_file_content(project_path_or_id, path, resolved_branch, pat)
+                
+            report_result = compliance_checker.run_check(
+                project_info=project_info,
+                releases=releases,
+                tags=tags,
+                tree_files=tree_files,
+                fetch_file_content_fn=fetch_content,
+                log_fn=None # We will log locally
             )
-        
-        # 2. Upload photo (handles Firestore bucket or mock static uploads)
-        image_url = supabase_service.upload_image(
-            file_bytes=image_bytes,
-            filename=image.filename,
-            content_type=image.content_type
-        )
-        
-        # 3. Compile report metadata
-        complaint_id = f"complaint_{uuid.uuid4().hex[:10]}"
-        now_iso = datetime.utcnow().isoformat() + "Z"
-        resolved_address = resolve_hyderabad_address(latitude, longitude)
-        
-        complaint_data = {
-            "id": complaint_id,
-            "imageUrl": image_url,
-            "location": {
-                "latitude": latitude,
-                "longitude": longitude
-            },
-            "address": resolved_address,
-            "wasteType": ai_analysis["waste_type"],
-            "aiAnalysis": {
-                "severity": ai_analysis["severity"],
-                "confidence": ai_analysis["confidence"],
-                "description": ai_analysis["description"],
-                "is_waste": ai_analysis["is_waste"]
-            },
-            "status": "Pending",
-            "reporterPhone": phone,
-            "reporterNotes": notes,
-            "reportCount": 1,
-            "additionalReporters": [],
-            "imageHash": img_hash,
-            "createdAt": now_iso,
-            "updatedAt": now_iso
-        }
-        
-        # 4. Save to Firestore / DB
-        result = supabase_service.create_complaint(complaint_data)
-        return result
-
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while creating the report: {str(e)}"
-        )
-
-@api_router.get(
-    "/complaints",
-    response_model=List[ComplaintResponse],
-    summary="Get all complaints",
-    description="Retrieve all complaints with optional filtering by status or waste type category."
-)
-def get_all_complaints(
-    status: Optional[str] = Query(None, description="Filter by status (Pending, In Progress, Resolved)"),
-    waste_type: Optional[str] = Query(None, description="Filter by waste type category")
-):
-    return supabase_service.get_complaints(status=status, waste_type=waste_type)
-
-@api_router.get(
-    "/complaints/{id}",
-    response_model=ComplaintResponse,
-    summary="Get complaint by ID",
-    description="Retrieve full details for a single reported complaint."
-)
-def get_complaint_by_id(
-    id: str = Path(..., description="Complaint Unique ID")
-):
-    complaint = supabase_service.get_complaint_by_id(id)
-    if not complaint:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Complaint with ID '{id}' was not found."
-        )
-    return complaint
-
-@api_router.patch(
-    "/complaints/{id}/status",
-    response_model=ComplaintResponse,
-    summary="Update complaint status",
-    description="Modifies the resolution status of a complaint. Accepted values: 'Pending', 'In Progress', 'Resolved'."
-)
-def update_complaint_status(
-    id: str = Path(..., description="Complaint Unique ID"),
-    status_update: StatusUpdate = None
-):
-    if not status_update:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Request body containing status field is required."
-        )
-
-    valid_statuses = ["Pending", "In Progress", "Resolved"]
-    normalized_status = status_update.status.strip()
-    
-    # Capitalize for schema consistency if user sends lowercase
-    if normalized_status.lower() == "in progress":
-        normalized_status = "In Progress"
-    else:
-        normalized_status = normalized_status.capitalize()
-
-    if normalized_status not in valid_statuses:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid status value. Must be one of: {', '.join(valid_statuses)}"
-        )
-
-    updated_complaint = supabase_service.update_complaint_status(id, normalized_status)
-    if not updated_complaint:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Complaint with ID '{id}' was not found."
-        )
-    return updated_complaint
-
-@api_router.post(
-    "/complaints/{id}/upvote",
-    response_model=ComplaintResponse,
-    summary="Upvote an active complaint",
-    description="Increments the report count and adds the reporter's phone to the list. Escalates severity based on report counts."
-)
-def upvote_complaint(
-    id: str = Path(..., description="Complaint Unique ID"),
-    phone: str = Form(..., description="Upvoter phone number")
-):
-    complaint = supabase_service.get_complaint_by_id(id)
-    if not complaint:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Complaint with ID '{id}' was not found."
-        )
-    
-    if complaint.get("status") not in ["Pending", "In Progress"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only active complaints (Pending or In Progress) can be upvoted."
-        )
-
-    current_reporters = complaint.get("additionalReporters")
-    if current_reporters is None:
-        current_reporters = []
-    
-    primary_phone = complaint.get("reporterPhone")
-    
-    clean_phone = phone.strip().replace(" ", "")
-    clean_primary = primary_phone.strip().replace(" ", "") if primary_phone else ""
-    clean_additional = [p.strip().replace(" ", "") for p in current_reporters]
-    
-    if clean_phone == clean_primary or clean_phone in clean_additional:
-        return complaint
-        
-    current_reporters.append(phone.strip())
-    new_count = complaint.get("reportCount", 1) + 1
-    
-    update_data = {
-        "reportCount": new_count,
-        "additionalReporters": current_reporters
-    }
-    
-    ai_analysis = complaint.get("aiAnalysis", {})
-    current_severity = ai_analysis.get("severity", "Low")
-    
-    new_severity = current_severity
-    if new_count >= 5:
-        new_severity = "Critical"
-    elif new_count >= 3:
-        if current_severity not in ["High", "Critical"]:
-            new_severity = "High"
             
-    if new_severity != current_severity:
-        ai_analysis["severity"] = new_severity
-        update_data["aiAnalysis"] = ai_analysis
+            yield add_log("Checks evaluated successfully.")
+            await asyncio.sleep(0.1)
+            
+            # Step 8: Generate AI recommendations
+            yield add_log("Consulting Gemini AI suggestions engine for custom stubs and fixes...")
+            suggestions_md = gemini_suggestions.generate_suggestions(
+                project_name=project_info.get("name", "Unknown Project"),
+                score=report_result["score"],
+                risk_level=report_result["risk_level"],
+                category_scores=report_result["category_scores"],
+                missing_files=report_result["missing_files"],
+                details=report_result["details"]
+            )
+            yield add_log("AI analysis complete.")
+            await asyncio.sleep(0.1)
+            
+            # Step 9: Save report
+            yield add_log("Saving compliance report to history database...")
+            report_id = f"report_{uuid.uuid4().hex[:10]}"
+            now_iso = datetime.utcnow().isoformat() + "Z"
+            
+            # Match schema fields
+            final_report_data = {
+                "id": report_id,
+                "project_id": str(project_info.get("id")),
+                "project_name": project_info.get("name", "Unknown Project"),
+                "project_url": project_info.get("web_url", project_url),
+                "branch": resolved_branch,
+                "score": report_result["score"],
+                "risk_level": report_result["risk_level"],
+                "metadata_score": report_result["category_scores"]["Metadata"],
+                "documentation_score": report_result["category_scores"]["Documentation"],
+                "health_score": report_result["category_scores"]["Health"],
+                "code_quality_score": report_result["category_scores"]["CodeQuality"],
+                "security_score": report_result["category_scores"]["Security"],
+                "testing_score": report_result["category_scores"]["Testing"],
+                "cicd_score": report_result["category_scores"]["CICD"],
+                "spec_kit_score": report_result["category_scores"]["SpecKit"],
+                "checks_passed": report_result["checks_passed"],
+                "checks_failed": report_result["checks_failed"],
+                "checks_total": report_result["checks_total"],
+                "details": report_result["details"],
+                "missing_files": report_result["missing_files"],
+                "suggestions": suggestions_md,
+                "analysis_logs": logs,
+                "created_at": now_iso
+            }
+            
+            supabase_service.create_report(final_report_data)
+            
+            # Final Event: return full report response
+            yield f"data: {json.dumps({'log': 'Compliance analysis complete!', 'percentage': 100, 'report': final_report_data})}\n\n"
+            
+        except Exception as ex:
+            yield f"data: {json.dumps({'error': f'An unexpected internal error occurred: {str(ex)}'})}\n\n"
 
-    updated = supabase_service.update_complaint(id, update_data)
-    if not updated:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update complaint upvote metrics."
+    return StreamingResponse(log_generator(), media_type="text/event-stream")
+
+@api_router.get("/compliance/history", response_model=List[ComplianceReportResponse])
+def get_all_reports():
+    """Retrieve full history of scans."""
+    return supabase_service.get_reports()
+
+@api_router.get("/compliance/latest", response_model=List[ComplianceReportResponse])
+def get_latest_project_reports():
+    """Retrieve single latest status report for each scanned repository."""
+    return supabase_service.get_latest_project_reports()
+
+@api_router.get("/compliance/history/project", response_model=ProjectHistoryResponse)
+def get_project_history(project_url: str = Query(..., description="GitLab project URL to fetch")):
+    """Get scan logs and time-series trends for a single repository."""
+    history = supabase_service.get_project_history(project_url)
+    if not history:
+        raise HTTPException(status_code=404, detail="No compliance history found for this repository.")
+        
+    trends = [
+        TrendPoint(date=r["created_at"], score=r["score"])
+        for r in history
+    ]
+    
+    return ProjectHistoryResponse(
+        project_url=project_url,
+        project_name=history[0]["project_name"],
+        history=history,
+        trends=trends
+    )
+
+@api_router.get("/compliance/comparison", response_model=TeamComparisonResponse)
+def get_team_comparison():
+    """Get project ranks and side-by-side compliance ratings."""
+    latest_reports = supabase_service.get_latest_project_reports()
+    
+    comparison_items = [
+        ComparisonItem(
+            project_name=r["project_name"],
+            project_url=r["project_url"],
+            score=r["score"],
+            risk_level=r["risk_level"],
+            checks_passed=r["checks_passed"],
+            checks_failed=r["checks_failed"],
+            created_at=r["created_at"]
         )
-    return updated
+        for r in latest_reports
+    ]
+    
+    # Sort by score descending (leaderboard)
+    comparison_items.sort(key=lambda x: x.score, reverse=True)
+    
+    avg_score = sum(item.score for item in comparison_items) / len(comparison_items) if comparison_items else 0.0
+    
+    return TeamComparisonResponse(
+        projects=comparison_items,
+        average_score=round(avg_score, 1)
+    )
 
-@api_router.delete(
-    "/complaints/{id}",
-    status_code=status.HTTP_200_OK,
-    summary="Delete complaint",
-    description="Permanently removes a complaint record from the database."
-)
-def delete_complaint(
-    id: str = Path(..., description="Complaint Unique ID")
-):
-    success = supabase_service.delete_complaint(id)
+@api_router.post("/compliance/batch", response_model=List[ComplianceReportResponse])
+async def analyze_batch(payload: BatchAnalysisRequest):
+    """
+    Synchronously analyze a batch of project URLs and return the collection of results.
+    Useful for CSV audits or instant bulk processing.
+    """
+    results = []
+    for project_url in payload.project_urls:
+        try:
+            project_path_or_id = gitlab_service.extract_project_path_or_id(project_url)
+            project_info = gitlab_service.get_project_details(project_path_or_id, payload.pat)
+            resolved_branch = payload.branch or project_info.get("default_branch") or "main"
+            
+            releases = gitlab_service.get_project_releases(project_path_or_id, payload.pat)
+            tags = gitlab_service.get_project_tags(project_path_or_id, payload.pat)
+            tree_files = gitlab_service.get_repository_tree(project_path_or_id, resolved_branch, payload.pat)
+            
+            def fetch_content(path: str) -> Optional[str]:
+                return gitlab_service.get_file_content(project_path_or_id, path, resolved_branch, payload.pat)
+                
+            report_result = compliance_checker.run_check(
+                project_info=project_info,
+                releases=releases,
+                tags=tags,
+                tree_files=tree_files,
+                fetch_file_content_fn=fetch_content
+            )
+            
+            suggestions_md = gemini_suggestions.generate_suggestions(
+                project_name=project_info.get("name", "Unknown Project"),
+                score=report_result["score"],
+                risk_level=report_result["risk_level"],
+                category_scores=report_result["category_scores"],
+                missing_files=report_result["missing_files"],
+                details=report_result["details"]
+            )
+            
+            report_id = f"report_{uuid.uuid4().hex[:10]}"
+            now_iso = datetime.utcnow().isoformat() + "Z"
+            
+            final_report_data = {
+                "id": report_id,
+                "project_id": str(project_info.get("id")),
+                "project_name": project_info.get("name", "Unknown Project"),
+                "project_url": project_info.get("web_url", project_url),
+                "branch": resolved_branch,
+                "score": report_result["score"],
+                "risk_level": report_result["risk_level"],
+                "metadata_score": report_result["category_scores"]["Metadata"],
+                "documentation_score": report_result["category_scores"]["Documentation"],
+                "health_score": report_result["category_scores"]["Health"],
+                "code_quality_score": report_result["category_scores"]["CodeQuality"],
+                "security_score": report_result["category_scores"]["Security"],
+                "testing_score": report_result["category_scores"]["Testing"],
+                "cicd_score": report_result["category_scores"]["CICD"],
+                "spec_kit_score": report_result["category_scores"]["SpecKit"],
+                "checks_passed": report_result["checks_passed"],
+                "checks_failed": report_result["checks_failed"],
+                "checks_total": report_result["checks_total"],
+                "details": report_result["details"],
+                "missing_files": report_result["missing_files"],
+                "suggestions": suggestions_md,
+                "analysis_logs": [{"timestamp": now_iso, "message": "Batch processed scan"}],
+                "created_at": now_iso
+            }
+            
+            supabase_service.create_report(final_report_data)
+            results.append(final_report_data)
+        except Exception as e:
+            # If a single repo fails in batch mode, we log and continue
+            print(f"Error scanning {project_url} in batch: {e}")
+            
+    return results
+
+@api_router.delete("/compliance/{id}")
+def delete_report(id: str):
+    """Delete a report record by ID."""
+    success = supabase_service.delete_report(id)
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Complaint with ID '{id}' was not found."
-        )
-    return {
-        "success": True,
-        "message": f"Complaint with ID '{id}' has been deleted successfully."
-    }
-
-@api_router.get(
-    "/analytics/summary",
-    response_model=AnalyticsSummaryResponse,
-    summary="Get analytics summary",
-    description="Fetch aggregated statistics on total, pending, in-progress, resolved, and waste distribution."
-)
-def get_analytics_summary():
-    return supabase_service.get_analytics_summary()
-
-@api_router.get(
-    "/analytics/hotspots",
-    response_model=List[HotspotResponse],
-    summary="Get hotspots coordinates",
-    description="Group complaints by physical proximity (approx. 100 meters) to locate waste concentration areas."
-)
-def get_analytics_hotspots():
-    return supabase_service.get_hotspots()
+        raise HTTPException(status_code=404, detail="Report ID not found.")
+    return {"success": True, "message": f"Compliance report '{id}' deleted successfully."}
 
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(api_router, prefix="/v1", include_in_schema=False)
 
-# --- Serve Frontend build in Production / Single-Server Mode ---
-# Resolves path to frontend/dist
+# Serve Frontend build in Production
 frontend_dist_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
 frontend_assets_dir = os.path.join(frontend_dist_dir, "assets")
 
-# Mount assets directory if it exists
 if os.path.exists(frontend_assets_dir):
     app.mount("/assets", StaticFiles(directory=frontend_assets_dir), name="assets")
 
 @app.get("/{catchall:path}")
 def serve_frontend(catchall: str):
-    # Try serving specific file from frontend/dist (e.g. favicon.ico, logo.png)
     if catchall:
         file_path = os.path.join(frontend_dist_dir, catchall)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)
             
-    # Default fallback to index.html to support React Router client-side routing
     index_file = os.path.join(frontend_dist_dir, "index.html")
     if os.path.exists(index_file):
         return FileResponse(index_file)
         
     return {
-        "message": "Welcome to the Smart Waste Management API.",
-        "frontend_status": "Vite production build not found. Run 'npm run build' in the frontend folder to serve the UI on this port."
+        "message": "Welcome to the GitLab Compliance Checker API.",
+        "frontend_status": "Production build not found. Please build the frontend."
     }

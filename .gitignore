@@ -26,3 +26,4 @@ backend/static/uploads/*
 *.sln
 *.sw?
 Thumbs.db
+backend/compliance_db.json
