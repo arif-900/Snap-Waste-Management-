@@ -1,0 +1,19 @@
+# ==========================================
+# GITLAB CODEOWNERS CONFIGURATION
+# ==========================================
+
+# Global owners (will receive all reviews by default)
+* @arif-900 @devops-lead
+
+# Backend Code (FastAPI, Python)
+/backend/ @arif-900 @python-architect
+
+# Frontend Code (React, Tailwind)
+/frontend/ @arif-900 @frontend-lead
+
+# Security Policies
+/.gitlab/security-policies/ @devops-lead @security-officer
+
+# Spec Kit and Project Documentation
+/specs/ @devops-lead @product-owner
+/.specify/ @devops-lead

@@ -1,5 +1,5 @@
 # ==========================================================
-# GITLAB CI/CD PIPELINE CONFIGURATION (REVISED)
+# GITLAB CI/CD PIPELINE CONFIGURATION (ENTERPRISE EDITION)
 # ==========================================================
 
 stages:
@@ -9,6 +9,7 @@ stages:
   - type_check
   - security
   - test
+  - coverage
   - build
   - deploy
 
@@ -133,16 +134,40 @@ run-tests:
     - pip install -r requirements.txt
     - pip install pytest pytest-cov
   script:
-    - pytest --cov=app ../tests/ --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+    - pytest --cov=app ../tests/ --cov-report=term-missing --cov-report=xml --cov-fail-under=80 --junitxml=../backend/junit.xml
   artifacts:
-    name: coverage-report
+    name: test-outputs
     expire_in: 7 days
     paths:
+      - backend/.coverage
       - backend/coverage.xml
+      - backend/junit.xml
     reports:
+      junit: backend/junit.xml
       coverage_report:
         coverage_format: cobertura
         path: backend/coverage.xml
+
+# ----------------------------------------------------------
+# COVERAGE STAGE
+# ----------------------------------------------------------
+coverage-report:
+  stage: coverage
+  image: python:3.11-slim
+  before_script:
+    - cd backend
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install coverage
+  script:
+    - coverage report
+    - coverage html
+  coverage: '/TOTAL.*\s+(\d+)\%/'
+  artifacts:
+    name: html-coverage
+    expire_in: 7 days
+    paths:
+      - backend/htmlcov/
 
 # ----------------------------------------------------------
 # BUILD STAGE
