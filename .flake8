@@ -1,11 +1,13 @@
 [flake8]
-max-line-length = 120
+max-line-length = 88
+ignore = E203,W503
 exclude =
     .git,
-    __pycache__,
+    .venv,
+    node_modules,
+    build,
+    dist,
     backend/venv,
-    frontend/node_modules,
-    dist
+    frontend/node_modules
 max-complexity = 10
-ignore = E203, W503, E501
 select = B,C,E,F,W,T4,B9

@@ -1,10 +1,12 @@
 # ==========================================================
-# GITLAB CI/CD PIPELINE CONFIGURATION
+# GITLAB CI/CD PIPELINE CONFIGURATION (REVISED)
 # ==========================================================
 
 stages:
   - validate
+  - format
   - lint
+  - type_check
   - security
   - test
   - build
@@ -29,6 +31,21 @@ validate-config:
     - echo "Pre-commit setup validation successful"
 
 # ----------------------------------------------------------
+# FORMAT STAGE
+# ----------------------------------------------------------
+format-check:
+  stage: format
+  image: python:3.11-slim
+  before_script:
+    - cd backend
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install black ruff
+  script:
+    - black --check .
+    - ruff format --check .
+
+# ----------------------------------------------------------
 # LINT STAGE
 # ----------------------------------------------------------
 python-lint:
@@ -38,10 +55,10 @@ python-lint:
     - cd backend
     - python -m venv venv
     - source venv/bin/activate
-    - pip install ruff mypy pylint vulture pyupgrade
+    - pip install ruff pylint vulture pyupgrade flake8
   script:
     - ruff check app/
-    - mypy app/
+    - flake8 app/
     - pylint app/
     - vulture app/
 
@@ -53,6 +70,20 @@ frontend-lint:
     - npm ci
   script:
     - npm run lint || echo "Lint checking executed"
+
+# ----------------------------------------------------------
+# TYPE_CHECK STAGE
+# ----------------------------------------------------------
+type-check:
+  stage: type_check
+  image: python:3.11-slim
+  before_script:
+    - cd backend
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install mypy pydantic pydantic-settings types-requests
+  script:
+    - mypy app/
 
 # ----------------------------------------------------------
 # SECURITY STAGE
