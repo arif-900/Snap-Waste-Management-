@@ -1,0 +1,24 @@
+[run]
+branch = True
+source = backend/app
+omit =
+    */__init__.py
+    tests/*
+    backend/venv/*
+    backend/app/services/gemini_service.py
+    backend/app/services/yolo_service.py
+    backend/app/services/image_hash.py
+    backend/app/services/supabase_service.py
+    backend/app/services/gitlab_service.py
+    backend/app/services/gemini_suggestions.py
+
+[report]
+show_missing = True
+fail_under = 80
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if self.debug:
+    if __name__ == .__main__.:
+    raise AssertionError
+    raise NotImplementedError

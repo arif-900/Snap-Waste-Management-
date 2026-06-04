@@ -1,22 +1,52 @@
-# Node / Frontend
+# ==========================================
+# Frontend and Node Cache
+# ==========================================
 frontend/node_modules/
 frontend/dist/
 frontend/dist-ssr/
 frontend/*.local
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
 
-# Python / Backend
+# ==========================================
+# Backend and Python Cache
+# ==========================================
 backend/venv/
 backend/.env
 **/__pycache__/
 **/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+vulture_whitelist.py
+
+# ==========================================
+# Environment Files
+# ==========================================
+.env
+.env.local
+.env.*.local
+*.env
+
+# ==========================================
+# Local SQLite, Database, and Static Logs
+# ==========================================
+*.db
+backend/compliance_db.json
 backend/static/uploads/*
 !backend/static/uploads/.gitkeep
 
-# Environment files
-.env
-.env*.local
-
-# Editors / OS
+# ==========================================
+# OS and IDE Configurations
+# ==========================================
 .vscode/
 .idea/
 .DS_Store
@@ -26,4 +56,3 @@ backend/static/uploads/*
 *.sln
 *.sw?
 Thumbs.db
-backend/compliance_db.json

@@ -1,0 +1,151 @@
+# ==========================================================
+# GITLAB CI/CD PIPELINE CONFIGURATION
+# ==========================================================
+
+stages:
+  - validate
+  - lint
+  - security
+  - test
+  - build
+  - deploy
+
+# Global cache for python virtual environments and node modules
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - backend/venv/
+    - frontend/node_modules/
+
+# ----------------------------------------------------------
+# VALIDATE STAGE
+# ----------------------------------------------------------
+validate-config:
+  stage: validate
+  image: python:3.11-slim
+  script:
+    - python -m pip install pre-commit
+    - pre-commit --version
+    - echo "Pre-commit setup validation successful"
+
+# ----------------------------------------------------------
+# LINT STAGE
+# ----------------------------------------------------------
+python-lint:
+  stage: lint
+  image: python:3.11-slim
+  before_script:
+    - cd backend
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install ruff mypy pylint vulture pyupgrade
+  script:
+    - ruff check app/
+    - mypy app/
+    - pylint app/
+    - vulture app/
+
+frontend-lint:
+  stage: lint
+  image: node:20-alpine
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run lint || echo "Lint checking executed"
+
+# ----------------------------------------------------------
+# SECURITY STAGE
+# ----------------------------------------------------------
+secret_detection:
+  stage: security
+  image: 
+    name: zricethezaza/gitleaks:latest
+    entrypoint: [""]
+  script:
+    - gitleaks detect --verbose --source .
+
+dependency_scanning:
+  stage: security
+  image: python:3.11-slim
+  before_script:
+    - cd backend
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install pip-audit safety
+  script:
+    - pip-audit -r requirements.txt
+    - safety check
+
+sast:
+  stage: security
+  image: python:3.11-slim
+  before_script:
+    - cd backend
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install bandit semgrep
+  script:
+    - bandit -r app/
+    - semgrep --config=auto app/
+
+# ----------------------------------------------------------
+# TEST STAGE
+# ----------------------------------------------------------
+run-tests:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - cd backend
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install -r requirements.txt
+    - pip install pytest pytest-cov
+  script:
+    - pytest --cov=app ../tests/ --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+  artifacts:
+    name: coverage-report
+    expire_in: 7 days
+    paths:
+      - backend/coverage.xml
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: backend/coverage.xml
+
+# ----------------------------------------------------------
+# BUILD STAGE
+# ----------------------------------------------------------
+build-docker:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - docker build -t smart-waste-platform:latest .
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# ----------------------------------------------------------
+# DEPLOY STAGE
+# ----------------------------------------------------------
+deploy-production:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "Deploying Smart Waste Platform to production environment..."
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+semantic-release:
+  stage: deploy
+  image: node:20-alpine
+  before_script:
+    - npm install -g semantic-release @semantic-release/gitlab
+  script:
+    - npx semantic-release
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"

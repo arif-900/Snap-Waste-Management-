@@ -1,0 +1,26 @@
+# GitLab Security Policy Configuration
+# Defines rules for static analysis and vulnerability approvals
+
+name: Smart Waste Security Policy
+description: Enforce SAST and Secret Detection on all commits to main
+enabled: true
+
+rules:
+  - name: Critical Vulnerability Rule
+    type: scan_finding
+    branches:
+      - main
+    scanners:
+      - sast
+      - secret_detection
+      - dependency_scanning
+    vulnerabilities_allowed: 0
+    severity_levels:
+      - critical
+      - high
+    actions:
+      - type: require_approval
+        approvals_required: 1
+        role_approvers:
+          - Owner
+          - Maintainer

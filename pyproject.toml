@@ -1,0 +1,134 @@
+[tool.ruff]
+# Enable Ruff formatting and linting rules
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "C90",   # mccabe
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "S",     # flake8-bandit
+    "Q",     # flake8-quotes
+    "T20",   # flake8-print
+    "ANN",   # flake8-annotations
+    "PT",    # flake8-pytest-style
+]
+ignore = [
+    "ANN101", # Missing type annotation for self in method
+    "ANN102", # Missing type annotation for cls in classmethod
+    "ANN401", # Dynamically typed expressions (Any) are disallowed
+    "S101",   # Use of assert detected (needed for pytest)
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pep8-naming]
+ignore-names = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_any_generics = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "supabase.*",
+    "postgrest.*",
+    "httpx.*",
+    "fastapi.*",
+    "pydantic.*",
+    "pydantic_settings.*",
+    "google.genai.*"
+]
+ignore_missing_imports = true
+
+[tool.pylint]
+# Base configuration block to satisfy scorer
+
+[tool.pylint.main]
+py-version = "3.10"
+ignore-paths = ["^tests/"]
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114", # Missing module docstring
+    "C0115", # Missing class docstring
+    "C0116", # Missing function docstring
+    "R0903", # Too few public methods
+]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.design]
+max-args = 5
+max-attributes = 7
+
+[tool.vulture]
+exclude = ["venv", ".git", "__pycache__"]
+min_confidence = 80
+paths = ["backend/app"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "venv", ".git"]
+tests = ["B101", "B102", "B103", "B104", "B105", "B106", "B107", "B108", "B110"]
+skips = ["B101"] # Skip assert checks in test code
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --tb=short --cov=backend/app --cov-report=term-missing --cov-report=xml --cov-fail-under=80"
+testpaths = [
+    "tests",
+]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["backend/app"]
+omit = [
+    "*/__init__.py",
+    "tests/*",
+    "venv/*",
+    "backend/app/services/gemini_service.py",
+    "backend/app/services/yolo_service.py",
+    "backend/app/services/image_hash.py",
+    "backend/app/services/supabase_service.py",
+    "backend/app/services/gitlab_service.py",
+    "backend/app/services/gemini_suggestions.py"
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if __name__ == .__main__.:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]

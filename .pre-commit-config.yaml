@@ -1,0 +1,68 @@
+repos:
+  # ==========================================
+  # Out-of-the-box pre-commit hooks
+  # ==========================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+      - id: end-of-file-fixer
+        name: Fix End of Files
+      - id: check-yaml
+        name: Validate YAML Files
+      - id: check-json
+        name: Validate JSON Files
+      - id: check-added-large-files
+        name: Prevent Large Commits
+
+  # ==========================================
+  # Code formatting & upgrades
+  # ==========================================
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.10.1
+    hooks:
+      - id: pyupgrade
+        args: [--py310-plus]
+        name: Upgrade Python Syntax (pyupgrade)
+
+  - repo: https://github.com/psf/black
+    rev: 23.7.0
+    hooks:
+      - id: black
+        name: Run Black Code Formatter
+
+  # ==========================================
+  # Linting and Type Checking
+  # ==========================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.0.285
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        name: Run Ruff Linter
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.5.1
+    hooks:
+      - id: mypy
+        additional_dependencies: [pydantic, pydantic-settings, types-requests]
+        name: Run Mypy Type Checker
+
+  # ==========================================
+  # Security Audits & Secret Scanners
+  # ==========================================
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
+        name: Run Bandit Security Scanner
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package-lock.json
+        name: Run Secret Detection Scanner

@@ -1,0 +1,9 @@
+rules:
+  - id: avoid-eval-use
+    patterns:
+      - pattern: eval(...)
+    message: "Avoid using eval() because it exposes the application to arbitrary code execution vulnerabilities."
+    languages:
+      - python
+      - javascript
+    severity: ERROR
