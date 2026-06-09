@@ -1,5 +1,7 @@
 import io
+
 from PIL import Image
+
 
 def calculate_dhash(image_bytes: bytes, hash_size: int = 8) -> str:
     """
@@ -12,10 +14,10 @@ def calculate_dhash(image_bytes: bytes, hash_size: int = 8) -> str:
         # Convert to grayscale and resize to (hash_size + 1, hash_size)
         # Using Resampling.LANCZOS for smooth resizing
         image = image.convert("L").resize((hash_size + 1, hash_size), Image.Resampling.LANCZOS)
-        
+
         # Get pixel values
         pixels = list(image.getdata())
-        
+
         difference = []
         for row in range(hash_size):
             for col in range(hash_size):
@@ -23,7 +25,7 @@ def calculate_dhash(image_bytes: bytes, hash_size: int = 8) -> str:
                 pixel_left = pixels[row * (hash_size + 1) + col]
                 pixel_right = pixels[row * (hash_size + 1) + col + 1]
                 difference.append(pixel_left > pixel_right)
-        
+
         # Convert list of 64 booleans into a hex string
         decimal_value = 0
         hex_string = []
@@ -34,7 +36,7 @@ def calculate_dhash(image_bytes: bytes, hash_size: int = 8) -> str:
                 # Convert byte to 2-digit hex and pad if necessary
                 hex_string.append(hex(decimal_value)[2:].zfill(2))
                 decimal_value = 0
-                
+
         return "".join(hex_string)
     except Exception as e:
         print(f"Error calculating image dHash: {e}")

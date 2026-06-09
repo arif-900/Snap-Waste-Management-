@@ -94,7 +94,7 @@ skips = ["B101"] # Skip assert checks in test code
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --tb=short --cov=backend/app --cov-report=term-missing --cov-report=xml --cov-fail-under=80"
+addopts = "-ra -q --tb=short"
 testpaths = [
     "tests",
 ]

@@ -1,12 +1,12 @@
 import os
 import uuid
-import json
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 from app.config import settings
 
 try:
-    from supabase import create_client, Client
+    from supabase import Client, create_client
     SUPABASE_AVAILABLE = True
 except ImportError:
     SUPABASE_AVAILABLE = False
@@ -14,149 +14,293 @@ except ImportError:
 class SupabaseService:
     def __init__(self):
         self.url = settings.SUPABASE_URL
+        # Prioritize service role key for backend admin operations to bypass RLS, fallback to anon key
         self.key = settings.SUPABASE_SERVICE_KEY or settings.SUPABASE_ANON_KEY
-        self.client: Optional[Client] = None
+        self.client: Client | None = None
         self.is_mock = True
-        self.mock_file_path = "compliance_db.json"
-        self.mock_db: Dict[str, Dict[str, Any]] = {}
-        
-        # Load local database if available
-        self._load_local_db()
+        self.mock_db: dict[str, dict[str, Any]] = {}
 
         if not SUPABASE_AVAILABLE:
             print("WARNING: supabase-py package is not installed. Running in MOCK mode.")
             return
 
         if not self.url or not self.key:
-            print("WARNING: Supabase URL or Key is missing from settings. Running in MOCK mode with compliance_db.json.")
+            print("WARNING: Supabase URL or Key is missing from settings. Running in MOCK mode.")
             return
 
         try:
             self.client = create_client(self.url, self.key)
             self.is_mock = False
-            print("Successfully initialized Supabase Client for GitLab Compliance Checker.")
+            print("Successfully initialized Supabase Client.")
         except Exception as e:
-            print(f"WARNING: Supabase initialization failed. Falling back to MOCK mode with local file. Error: {e}")
+            print(f"WARNING: Supabase initialization failed. Falling back to MOCK mode. Error: {e}")
             self.is_mock = True
 
-    def _load_local_db(self):
-        """Loads in-memory database from compliance_db.json to ensure persistence during mock development."""
-        if os.path.exists(self.mock_file_path):
-            try:
-                with open(self.mock_file_path, "r", encoding="utf-8") as f:
-                    self.mock_db = json.load(f)
-                print(f"Loaded {len(self.mock_db)} records from local database file '{self.mock_file_path}'")
-            except Exception as e:
-                print(f"Error loading {self.mock_file_path}: {e}")
-                self.mock_db = {}
-        else:
-            self.mock_db = {}
-
-    def _save_local_db(self):
-        """Saves current in-memory database state to compliance_db.json."""
-        try:
-            with open(self.mock_file_path, "w", encoding="utf-8") as f:
-                json.dump(self.mock_db, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"Error saving to {self.mock_file_path}: {e}")
-
-    def create_report(self, report_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Saves a new compliance report in Supabase or the local persistent file."""
-        report_id = report_data["id"]
-        
-        # Save in mock memory + persist file
-        self.mock_db[report_id] = report_data
-        self._save_local_db()
-        
+    def upload_image(self, file_bytes: bytes, filename: str, content_type: str) -> str:
+        """Uploads image to Supabase Storage bucket 'waste_images'. Falls back to local static directory on failure."""
         if self.is_mock or not self.client:
-            return report_data
-            
+            return self._save_locally(file_bytes, filename)
+
         try:
-            # Insert into Supabase 'compliance_reports' table
-            self.client.table("compliance_reports").insert(report_data).execute()
-            return report_data
+            # Generate unique safe path name
+            unique_name = f"{uuid.uuid4()}_{filename}"
+
+            # Perform upload to storage bucket
+            self.client.storage.from_("waste_images").upload(
+                path=unique_name,
+                file=file_bytes,
+                file_options={"content-type": content_type}
+            )
+
+            # Fetch public static URL
+            public_url = self.client.storage.from_("waste_images").get_public_url(unique_name)
+            return public_url
         except Exception as e:
-            print(f"Error creating report in Supabase: {e}. Retained in local database file.")
-            return report_data
+            print(f"Error uploading to Supabase Storage: {e}. Saving locally instead.")
+            return self._save_locally(file_bytes, filename)
 
-    def get_reports(self, project_url: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Retrieves scan reports, optionally filtered by project_url."""
+    def _save_locally(self, file_bytes: bytes, filename: str) -> str:
+        # On Vercel, serverless containers are ephemeral and have no shared filesystem.
+        # Instead of saving to disk, we return a Base64 data URL so the image is stored
+        # directly in the database record and can be accessed reliably across all instances.
+        if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+            import base64
+            ext = os.path.splitext(filename)[1].lower()
+            mime_type = "image/jpeg"
+            if ext in [".png"]:
+                mime_type = "image/png"
+            elif ext in [".webp"]:
+                mime_type = "image/webp"
+            elif ext in [".gif"]:
+                mime_type = "image/gif"
+
+            encoded_image = base64.b64encode(file_bytes).decode("utf-8")
+            return f"data:{mime_type};base64,{encoded_image}"
+
+        # Local development fallback
+        safe_filename = f"{uuid.uuid4()}_{filename}"
+        os.makedirs("static/uploads", exist_ok=True)
+        filepath = os.path.join("static/uploads", safe_filename)
+        with open(filepath, "wb") as f:
+            f.write(file_bytes)
+        return f"/static/uploads/{safe_filename}"
+
+    def create_complaint(self, complaint_data: dict[str, Any]) -> dict[str, Any]:
+        """Creates a new complaint document in the PostgreSQL table."""
+        complaint_id = complaint_data["id"]
+
+        # Always maintain backup copy in mock db
+        self.mock_db[complaint_id] = complaint_data
+
         if self.is_mock or not self.client:
-            return self._get_mock_reports(project_url)
+            return complaint_data
 
         try:
-            query = self.client.table("compliance_reports").select("*")
-            if project_url:
-                query = query.eq("project_url", project_url)
-            
+            # Insert into Supabase table
+            self.client.table("complaints").insert(complaint_data).execute()
+            return complaint_data
+        except Exception as e:
+            print(f"Error creating complaint in Supabase: {e}. Retained in-memory backup.")
+            return complaint_data
+
+    def get_complaints(self, status: str | None = None, waste_type: str | None = None) -> list[dict[str, Any]]:
+        """Retrieves complaints with optional filter parameters."""
+        if self.is_mock or not self.client:
+            return self._get_mock_complaints(status, waste_type)
+
+        try:
+            query = self.client.table("complaints").select("*")
+            if status:
+                query = query.eq("status", status)
+            if waste_type:
+                query = query.eq("wasteType", waste_type)
+
             response = query.execute()
             results = response.data or []
+
             # Sort by creation date descending
-            results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            results.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
             return results
         except Exception as e:
-            print(f"Error fetching reports from Supabase: {e}. Falling back to local data.")
-            return self._get_mock_reports(project_url)
+            print(f"Error fetching from Supabase: {e}. Falling back to in-memory store.")
+            return self._get_mock_complaints(status, waste_type)
 
-    def _get_mock_reports(self, project_url: Optional[str] = None) -> List[Dict[str, Any]]:
+    def _get_mock_complaints(self, status: str | None = None, waste_type: str | None = None) -> list[dict[str, Any]]:
         results = list(self.mock_db.values())
-        if project_url:
-            results = [r for r in results if r.get("project_url", "").lower() == project_url.lower()]
-        results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        if status:
+            results = [c for c in results if c["status"].lower() == status.lower()]
+        if waste_type:
+            results = [c for c in results if c["wasteType"].lower() == waste_type.lower()]
+        results.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
         return results
 
-    def get_report_by_id(self, report_id: str) -> Optional[Dict[str, Any]]:
-        """Gets details of a single scan report by ID."""
+    def get_complaint_by_id(self, complaint_id: str) -> dict[str, Any] | None:
+        """Retrieves a single complaint by ID."""
         if self.is_mock or not self.client:
-            return self.mock_db.get(report_id)
-            
+            return self.mock_db.get(complaint_id)
+
         try:
-            response = self.client.table("compliance_reports").select("*").eq("id", report_id).execute()
+            response = self.client.table("complaints").select("*").eq("id", complaint_id).execute()
             results = response.data or []
             if results:
                 return results[0]
-            return self.mock_db.get(report_id)
+            return self.mock_db.get(complaint_id)
         except Exception as e:
-            print(f"Error fetching report from Supabase: {e}. Checking local database.")
-            return self.mock_db.get(report_id)
+            print(f"Error fetching complaint from Supabase: {e}. Trying in-memory backup.")
+            return self.mock_db.get(complaint_id)
 
-    def get_project_history(self, project_url: str) -> List[Dict[str, Any]]:
-        """Retrieves compliance check history sorted chronologically ascending for trends."""
-        reports = self.get_reports(project_url=project_url)
-        # Sort ascending for time series trends
-        reports.sort(key=lambda x: x.get("created_at", ""))
-        return reports
+    def update_complaint_status(self, complaint_id: str, new_status: str) -> dict[str, Any] | None:
+        """Updates the status of a complaint and sets updatedAt timestamp."""
+        now_iso = datetime.utcnow().isoformat() + "Z"
 
-    def get_latest_project_reports(self) -> List[Dict[str, Any]]:
-        """Returns only the single latest report for each unique project URL (latest status)."""
-        reports = self.get_reports()
-        
-        latest_map = {}
-        for r in reports:
-            p_url = r.get("project_url")
-            c_at = r.get("created_at", "")
-            if p_url not in latest_map or c_at > latest_map[p_url].get("created_at", ""):
-                latest_map[p_url] = r
-                
-        return list(latest_map.values())
+        # Keep mock db updated
+        if complaint_id in self.mock_db:
+            self.mock_db[complaint_id]["status"] = new_status
+            self.mock_db[complaint_id]["updatedAt"] = now_iso
 
-    def delete_report(self, report_id: str) -> bool:
-        """Deletes a report by ID."""
+        if self.is_mock or not self.client:
+            return self.mock_db.get(complaint_id)
+
+        try:
+            response = self.client.table("complaints").update({
+                "status": new_status,
+                "updatedAt": now_iso
+            }).eq("id", complaint_id).execute()
+            results = response.data or []
+            if results:
+                return results[0]
+            elif complaint_id in self.mock_db:
+                return self.mock_db[complaint_id]
+            return None
+        except Exception as e:
+            print(f"Error updating in Supabase: {e}. Updating in-memory only.")
+            return self.mock_db.get(complaint_id)
+
+    def update_complaint(self, complaint_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Updates arbitrary fields of a complaint and sets updatedAt timestamp."""
+        now_iso = datetime.utcnow().isoformat() + "Z"
+        update_data["updatedAt"] = now_iso
+
+        # Keep mock db updated
+        if complaint_id in self.mock_db:
+            for k, v in update_data.items():
+                self.mock_db[complaint_id][k] = v
+
+        if self.is_mock or not self.client:
+            return self.mock_db.get(complaint_id)
+
+        try:
+            response = self.client.table("complaints").update(update_data).eq("id", complaint_id).execute()
+            results = response.data or []
+            if results:
+                return results[0]
+            elif complaint_id in self.mock_db:
+                return self.mock_db[complaint_id]
+            return None
+        except Exception as e:
+            print(f"Error updating in Supabase: {e}. Updated in-memory only.")
+            return self.mock_db.get(complaint_id)
+
+    def delete_complaint(self, complaint_id: str) -> bool:
+        """Deletes a complaint by ID."""
         deleted = False
-        if report_id in self.mock_db:
-            del self.mock_db[report_id]
-            self._save_local_db()
+        if complaint_id in self.mock_db:
+            del self.mock_db[complaint_id]
             deleted = True
-            
+
         if self.is_mock or not self.client:
             return deleted
-            
+
         try:
-            self.client.table("compliance_reports").delete().eq("id", report_id).execute()
+            self.client.table("complaints").delete().eq("id", complaint_id).execute()
             deleted = True
             return deleted
         except Exception as e:
-            print(f"Error deleting report from Supabase: {e}")
+            print(f"Error deleting from Supabase: {e}.")
             return deleted
 
+    def get_analytics_summary(self) -> dict[str, Any]:
+        """Computes summarized counts for the analytics dashboard."""
+        complaints = self.get_complaints()
+
+        summary = {
+            "total": len(complaints),
+            "pending": 0,
+            "in_progress": 0,
+            "resolved": 0,
+            "types": {},
+            "severity": {
+                "Low": 0,
+                "Medium": 0,
+                "High": 0
+            }
+        }
+
+        for c in complaints:
+            # Status counter
+            status = c.get("status", "Pending").lower()
+            if status == "pending":
+                summary["pending"] += 1
+            elif status in ["in progress", "in_progress"]:
+                summary["in_progress"] += 1
+            elif status == "resolved":
+                summary["resolved"] += 1
+
+            # Waste Type counter
+            w_type = c.get("wasteType", "Unknown")
+            summary["types"][w_type] = summary["types"].get(w_type, 0) + 1
+
+            # Severity counter
+            ai = c.get("aiAnalysis", {})
+            sev = ai.get("severity", "Medium")
+            if sev in summary["severity"]:
+                summary["severity"][sev] += 1
+
+        return summary
+
+    def get_hotspots(self) -> list[dict[str, Any]]:
+        """Groups complaints by proximity (3 decimal places of latitude/longitude)."""
+        complaints = self.get_complaints()
+        clusters: dict[tuple, dict[str, Any]] = {}
+
+        for c in complaints:
+            loc = c.get("location", {})
+            lat = loc.get("latitude")
+            lng = loc.get("longitude")
+            if lat is None or lng is None:
+                continue
+
+            # Round coordinates to ~110m grid
+            grid_key = (round(lat, 3), round(lng, 3))
+
+            ai = c.get("aiAnalysis", {})
+            severity = ai.get("severity", "Medium")
+
+            if grid_key not in clusters:
+                clusters[grid_key] = {
+                    "latitude": lat,
+                    "longitude": lng,
+                    "count": 1,
+                    "severities": {severity: 1}
+                }
+            else:
+                clusters[grid_key]["count"] += 1
+                clusters[grid_key]["severities"][severity] = clusters[grid_key]["severities"].get(severity, 0) + 1
+
+        results = []
+        for key, data in clusters.items():
+            sevs = data["severities"]
+            dominant_severity = max(sevs, key=sevs.get)
+
+            results.append({
+                "latitude": data["latitude"],
+                "longitude": data["longitude"],
+                "count": data["count"],
+                "severity": dominant_severity
+            })
+
+        return results
+
 supabase_service = SupabaseService()
+
+

@@ -1,8 +1,10 @@
 import io
 import json
 import random
+from typing import Any
+
 from PIL import Image
-from typing import Dict, Any, Optional
+
 from app.config import settings
 
 # Attempt import of Google Gen AI SDK
@@ -20,7 +22,7 @@ class GeminiService:
         if not GEMINI_AVAILABLE:
             print("WARNING: google-genai package not found. Running Gemini in MOCK mode.")
             return
-            
+
         if settings.GEMINI_API_KEY:
             try:
                 self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
@@ -31,7 +33,7 @@ class GeminiService:
         else:
             print("WARNING: GEMINI_API_KEY is not defined. Running Gemini in MOCK mode.")
 
-    def analyze_waste_image(self, image_bytes: bytes) -> Dict[str, Any]:
+    def analyze_waste_image(self, image_bytes: bytes) -> dict[str, Any]:
         """
         Sends an uploaded waste image to the Gemini Vision API for classification.
         
@@ -40,11 +42,11 @@ class GeminiService:
         """
         if not self.is_configured:
             return self._generate_mock_analysis(image_bytes)
-            
+
         try:
             # Read image bytes using Pillow
             image = Image.open(io.BytesIO(image_bytes))
-            
+
             prompt = """
             You are a Smart Waste Management Classifier for Hyderabad Municipality.
             Analyze the provided image and extract classification information.
@@ -58,27 +60,27 @@ class GeminiService:
               "description": string // Brief summary describing the image contents (max 2 sentences, e.g. "Overflowing blue bin with plastic bottles and dry waste")
             }
             """
-            
+
             # Request structured JSON format from the model using the client
             response = self.client.models.generate_content(
-                model='gemini-1.5-flash',
+                model="gemini-1.5-flash",
                 contents=[prompt, image],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json"
                 )
             )
-            
+
             result_text = response.text.strip()
-            
+
             # Clean up potential markdown formatting blocks
             if result_text.startswith("```json"):
                 result_text = result_text[7:]
             if result_text.endswith("```"):
                 result_text = result_text[:-3]
             result_text = result_text.strip()
-            
+
             parsed_result = json.loads(result_text)
-            
+
             # Map parameters and apply standard fallbacks if any fields are missing
             return {
                 "is_waste": parsed_result.get("is_waste", True),
@@ -87,22 +89,22 @@ class GeminiService:
                 "confidence": parsed_result.get("confidence", 0.85),
                 "description": parsed_result.get("description", "Public waste accumulation detected.")
             }
-            
+
         except Exception as e:
             print(f"Error executing Gemini API call: {e}. Defaulting to mock analysis.")
             return self._generate_mock_analysis(image_bytes)
- 
-    def _generate_mock_analysis(self, image_bytes: Optional[bytes] = None) -> Dict[str, Any]:
+
+    def _generate_mock_analysis(self, image_bytes: bytes | None = None) -> dict[str, Any]:
         """Generates realistic waste mock analysis for local offline testing."""
         import hashlib
-        
+
         # Create a local random generator and seed it with the MD5 hash of image bytes
         r = random.Random()
         if image_bytes:
             hasher = hashlib.md5(image_bytes)
             seed = int(hasher.hexdigest(), 16)
             r.seed(seed)
-            
+
         waste_types = ["Overflowing Garbage Bin", "Illegal Dumping", "Plastic Waste", "Construction Waste", "E-Waste", "Other"]
         severities = ["Low", "Medium", "High"]
         descriptions = [
@@ -112,11 +114,11 @@ class GeminiService:
             "Debris from concrete blocks, bricks, and tiles obstructing the road shoulder.",
             "Old electronic wires, batteries, and keyboard parts discarded by the utility pole."
         ]
-        
+
         selected_type = r.choice(waste_types)
         selected_sev = r.choice(severities)
         selected_desc = r.choice(descriptions)
-        
+
         return {
             "is_waste": True,
             "waste_type": selected_type,
@@ -124,6 +126,6 @@ class GeminiService:
             "confidence": round(r.uniform(0.80, 0.96), 2),
             "description": f"[Mock AI] {selected_desc}"
         }
- 
+
 # Singleton instance
 gemini_service = GeminiService()
