@@ -107,16 +107,36 @@ class YoloService:
             # Check if any detected item belongs to waste_classes
             waste_detected = [cls for cls in detected_classes if cls in waste_classes]
 
-            if not waste_detected:
-                # Detections occurred but none are waste items (e.g. only person, car, dog detected)
-                items_summary = ", ".join([f"{count} {name}{'s' if count > 1 else ''}" for name, count in counts.items()])
+            # Reduce false positives: if the only items detected are single clean items (like a single laptop, chair, apple, or cup),
+            # do not classify as waste unless there is a larger collection of items or strong trash signals.
+            is_actual_waste = False
+            if waste_detected:
+                strong_trash_classes = {"trash", "garbage", "litter", "waste", "toilet"}
+                has_strong_trash = any(cls in strong_trash_classes for cls in detected_classes)
+                
+                if has_strong_trash:
+                    is_actual_waste = True
+                elif len(waste_detected) >= 3:
+                    is_actual_waste = True
+                else:
+                    # Clean household items shouldn't trigger a report on their own (false positives)
+                    clean_household_classes = {
+                        "chair", "couch", "bed", "dining table", "laptop", "mouse", "keyboard", 
+                        "cell phone", "tv", "banana", "apple", "sandwich", "orange", 
+                        "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "cup", "bowl"
+                    }
+                    is_actual_waste = not all(cls in clean_household_classes for cls in waste_detected)
+
+            if not is_actual_waste:
+                # No actual waste detected, return clean state
+                items_summary = ", ".join([f"{count} {name}{'s' if count > 1 else ''}" for name, count in counts.items()]) if counts else "no objects"
                 return {
                     "is_waste": False,
-                    "show_bypass": False,
+                    "show_bypass": True,  # Allow administrative bypass if needed
                     "waste_type": "Other",
                     "severity": "Low",
                     "confidence": round(avg_confidence, 2),
-                    "description": f"YOLO detected no waste. (Found non-waste items: {items_summary})"
+                    "description": f"YOLO detected no waste. (Found: {items_summary})"
                 }
 
             # Map detected categories to system waste types
@@ -188,18 +208,23 @@ class YoloService:
             r.seed(seed)
 
         mock_detections = [
-            {"counts": {"bottle": 3, "cup": 2}, "type": "Plastic Waste", "severity": "Medium", "desc": "3 bottles, 2 cups"},
-            {"counts": {"chair": 2, "suitcase": 1}, "type": "Illegal Dumping", "severity": "High", "desc": "2 chairs, 1 suitcase"},
-            {"counts": {"cell phone": 1, "laptop": 1}, "type": "E-Waste", "severity": "Medium", "desc": "1 cell phone, 1 laptop"},
-            {"counts": {"banana": 2, "apple": 1, "orange": 1}, "type": "Other", "severity": "Low", "desc": "2 bananas, 1 apple, 1 orange"},
-            {"counts": {"bottle": 6, "cup": 4, "bowl": 2}, "type": "Overflowing Garbage Bin", "severity": "High", "desc": "6 bottles, 4 cups, 2 bowls"}
+            {"counts": {"bottle": 3, "cup": 2}, "type": "Plastic Waste", "severity": "Medium", "desc": "3 bottles, 2 cups", "is_waste": True},
+            {"counts": {"chair": 2, "suitcase": 1}, "type": "Illegal Dumping", "severity": "High", "desc": "2 chairs, 1 suitcase", "is_waste": True},
+            {"counts": {"cell phone": 1, "laptop": 1}, "type": "E-Waste", "severity": "Medium", "desc": "1 cell phone, 1 laptop", "is_waste": True},
+            {"counts": {"banana": 2, "apple": 1, "orange": 1}, "type": "Other", "severity": "Low", "desc": "2 bananas, 1 apple, 1 orange", "is_waste": True},
+            {"counts": {"bottle": 6, "cup": 4, "bowl": 2}, "type": "Overflowing Garbage Bin", "severity": "High", "desc": "6 bottles, 4 cups, 2 bowls", "is_waste": True},
+            # Non-waste mock detections
+            {"counts": {}, "type": "Other", "severity": "Low", "desc": "no prominent waste objects", "is_waste": False},
+            {"counts": {"person": 1, "dog": 1}, "type": "Other", "severity": "Low", "desc": "a person walking a dog", "is_waste": False},
+            {"counts": {"car": 1}, "type": "Other", "severity": "Low", "desc": "a car parked on the street", "is_waste": False}
         ]
 
         selection = r.choice(mock_detections)
         avg_conf = round(r.uniform(0.78, 0.94), 2)
+        is_waste = selection.get("is_waste", True)
 
         return {
-            "is_waste": True,
+            "is_waste": is_waste,
             "show_bypass": True,
             "waste_type": selection["type"],
             "severity": selection["severity"],
